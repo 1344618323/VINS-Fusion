@@ -61,6 +61,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     long_track_num = 0;
     for (auto &id_pts : image)
     {
+        // 获取左目xyzuv
         FeaturePerFrame f_per_fra(id_pts.second[0].second, td);
         assert(id_pts.second[0].first == 0);
         if(id_pts.second.size() == 2)
@@ -92,6 +93,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
 
     //if (frame_count < 2 || last_track_num < 20)
     //if (frame_count < 2 || last_track_num < 20 || new_feature_num > 0.5 * last_track_num)
+    // 新特征点多，或者是长期跟踪点少，就要创建关键帧
     if (frame_count < 2 || last_track_num < 20 || long_track_num < 40 || new_feature_num > 0.5 * last_track_num)
         return true;
 
@@ -100,6 +102,11 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         if (it_per_id.start_frame <= frame_count - 2 &&
             it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
         {
+            // 比如 frame_count = 10, start_frame = 7
+            // 那么 有 7,8,9 能看到的关键点会进入这个条件
+            // 7,8,9,10 能看到的关键点会进入这个条件
+            // 7,8 就不能看到的关键点不会进入这个条件
+            // 这个函数，就是为了比较 frame_count-2 和 frame_count-1的视差 （而不是frame_count）
             parallax_sum += compensatedParallax2(it_per_id, frame_count);
             parallax_num++;
         }
@@ -256,6 +263,7 @@ bool FeatureManager::solvePoseByPnP(Eigen::Matrix3d &R, Eigen::Vector3d &P,
     return true;
 }
 
+// 搜集frameCnt观测到的3d点，PnP求解T[frameCnt]
 void FeatureManager::initFramePoseByPnP(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vector3d tic[], Matrix3d ric[])
 {
 
@@ -299,6 +307,11 @@ void FeatureManager::initFramePoseByPnP(int frameCnt, Vector3d Ps[], Matrix3d Rs
     }
 }
 
+/*
+三角化 frameCnt的特征点：
+对于有stereo的，使用左右目三角化
+对于没有setero的，使用前后帧三角化
+*/
 void FeatureManager::triangulate(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vector3d tic[], Matrix3d ric[])
 {
     for (auto &it_per_id : feature)
@@ -330,6 +343,7 @@ void FeatureManager::triangulate(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vec
             //cout << "point0 " << point0.transpose() << endl;
             //cout << "point1 " << point1.transpose() << endl;
 
+            // 没有用双目视差求深度，而是用两个相机位姿三角化
             triangulatePoint(leftPose, rightPose, point0, point1, point3d);
             Eigen::Vector3d localPoint;
             localPoint = leftPose.leftCols<3>() * point3d + leftPose.rightCols<1>();
@@ -347,6 +361,7 @@ void FeatureManager::triangulate(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vec
         }
         else if(it_per_id.feature_per_frame.size() > 1)
         {
+            // 观测到的特征点的头两帧用于三角化
             int imu_i = it_per_id.start_frame;
             Eigen::Matrix<double, 3, 4> leftPose;
             Eigen::Vector3d t0 = Ps[imu_i] + Rs[imu_i] * tic[0];
@@ -384,6 +399,7 @@ void FeatureManager::triangulate(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vec
         if (it_per_id.used_num < 4)
             continue;
 
+        // 似乎都到不了这一步
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
 
         Eigen::MatrixXd svd_A(2 * it_per_id.feature_per_frame.size(), 4);

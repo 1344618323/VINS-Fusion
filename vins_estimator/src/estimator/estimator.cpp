@@ -342,6 +342,7 @@ void Estimator::processMeasurements()
 }
 
 
+// 世界坐标系的z指向地心，Rs[0]根据最开始平均得到的重力向量，有一个pitch和roll
 void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVector)
 {
     printf("init first imu pose\n");
@@ -353,6 +354,7 @@ void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVecto
     {
         averAcc = averAcc + accVector[i].second;
     }
+    // 平均加速度算一个重力加速度
     averAcc = averAcc / n;
     printf("averge acc %f %f %f\n", averAcc.x(), averAcc.y(), averAcc.z());
     Matrix3d R0 = Utility::g2R(averAcc);
@@ -408,6 +410,9 @@ void Estimator::processIMU(double t, double dt, const Vector3d &linear_accelerat
     gyr_0 = angular_velocity; 
 }
 
+/*
+image: map[feature id] -> {(lcam: xyzuv...), (rcam: xyzuv)}
+*/
 void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, const double header)
 {
     ROS_DEBUG("new image coming ------------------------------------------");
@@ -1021,6 +1026,7 @@ void Estimator::optimization()
     }
     if(!USE_IMU)
         problem.SetParameterBlockConstant(para_Pose[0]);
+        // 如果没有IMU，就固定第一帧
 
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
@@ -1508,6 +1514,12 @@ double Estimator::reprojectionError(Matrix3d &Ri, Vector3d &Pi, Matrix3d &rici, 
     return sqrt(rx * rx + ry * ry);
 }
 
+/*
+在vins中，使用逆深度参数化一个特征点
+对一个特征点，第一个观测到的帧为i
+统计其他观测到它的帧的重投影误差
+平均误差大于3像素，就认为是个outlier
+*/
 void Estimator::outliersRejection(set<int> &removeIndex)
 {
     //return;
